@@ -75,14 +75,14 @@ def register_macroeconomic_tools(app: FastMCP, active_data_source: FinancialData
         # 对year_type进行基本验证
         if year_type not in ['0', '1']:
             logger.warning(f"Invalid year_type requested: {year_type}")
-            return "Error: Invalid year_type '{year_type}'. Valid options are '0' (announcement date) or '1' (effective date)."
+            return f"Error: Invalid year_type '{year_type}'. Valid options are '0' (announcement date) or '1' (effective date)."
 
         return call_macro_data_tool(
             "get_required_reserve_ratio_data",
             active_data_source.get_required_reserve_ratio_data,
             "存款准备金率",
             start_date, end_date,
-            yearType=year_type  # 正确命名传递给Baostock的额外参数
+            year_type=year_type
         )
 
     @app.tool()

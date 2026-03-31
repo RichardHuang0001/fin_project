@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # Import the interface and the concrete implementation
 from src.data_source_interface import FinancialDataSource
-from src.baostock_data_source import BaostockDataSource
+from src.multi_market_data_source import MultiMarketDataSource
 from src.utils import setup_logging
 
 # 导入各模块工具的注册函数
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # --- Dependency Injection ---
 # Instantiate the data source - easy to swap later if needed
-active_data_source: FinancialDataSource = BaostockDataSource()
+active_data_source: FinancialDataSource = MultiMarketDataSource()
 
 # --- Get current date for system prompt ---
 current_date = datetime.now().strftime("%Y-%m-%d")

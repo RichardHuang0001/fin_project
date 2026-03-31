@@ -37,6 +37,92 @@
 - 不要把真实 `.env`、日志、报告、模型权重提交到 Git。
 - 模型权重和运行日志属于运行时资源，不属于源码。
 
+## 如何运行
+### 1. 启动 fin_llm
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_llm_py312
+cd /srv/fin/services/fin_llm
+./scripts/start.sh
+```
+说明：
+- 当前标准启动方式会拉起 vLLM，并监听 `fin_llm.env` 里配置的地址。
+- 目前默认本机地址是 `http://127.0.0.1:6006/v1`。
+
+### 2. 测试 fin_llm
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_llm_py312
+cd /srv/fin/services/fin_llm
+python tests/test_openai_tool_call.py
+```
+这条命令用于验证模型服务是否真的返回 `tool_calls`。
+
+### 3. 测试 fin_data_svr
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_data_py312
+cd /srv/fin/services/fin_data_svr
+./scripts/healthcheck.sh
+```
+如果要跑完整自测：
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_data_py312
+cd /srv/fin/services/fin_data_svr
+./run_fulltest.sh
+```
+
+### 4. 运行 fin_agent
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_agent_py312
+cd /srv/fin/services/fin_agent
+./scripts/start.sh --command '分析嘉友国际(603871)'
+```
+说明：
+- `fin_agent` 会按配置自动调用 `fin_llm`。
+- `fin_agent` 会按配置自动拉起 `fin_data_svr` 的 MCP 进程。
+
+### 5. 测试 fin_agent
+简单接口测试：
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_agent_py312
+cd /srv/fin/services/fin_agent
+./scripts/selftest.sh
+```
+端到端分析测试：
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_agent_py312
+cd /srv/fin/services/fin_agent
+./scripts/start.sh --command '分析嘉友国际(603871)'
+```
+报告输出目录：
+- `/srv/fin/services/fin_agent/reports`
+
+## 如何调试
+### 看 fin_llm 日志
+```bash
+tail -f /srv/fin/logs/fin_llm/vllm_6006.log
+```
+
+### 看 fin_agent 日志
+```bash
+tail -f /srv/fin/logs/fin_agent/e2e_smoke.log
+```
+或看执行目录：
+```bash
+ls -lt /srv/fin/services/fin_agent/logs
+```
+
+### 看数据服务日志/健康检查
+```bash
+conda activate /root/autodl-tmp/conda-envs/fin_data_py312
+cd /srv/fin/services/fin_data_svr
+./scripts/healthcheck.sh
+```
+
+### 常见排查顺序
+1. 先确认 `fin_llm` 是否能访问：`curl http://127.0.0.1:6006/health`
+2. 再确认 `fin_llm` 的 tool calling 测试是否通过。
+3. 再确认 `fin_data_svr` 自测是否通过。
+4. 最后再跑 `fin_agent` 的端到端命令。
+
 ## 当前状态
 - `fin_llm`：已能正常启动，且协议层支持 tool calling。
 - `fin_data_svr`：已能正常自测并访问 Baostock。

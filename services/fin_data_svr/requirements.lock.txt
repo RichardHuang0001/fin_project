@@ -1,0 +1,7 @@
+baostock==0.8.9
+beautifulsoup4==4.14.2
+mcp[cli]==1.26.0
+pandas==2.3.3
+python-dotenv==1.2.2
+requests==2.33.1
+tabulate==0.10.0

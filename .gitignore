@@ -1,0 +1,28 @@
+# Real runtime config
+config/*.env
+config/*.bak
+config/*.local
+
+# Runtime outputs
+logs/
+run/
+models/
+
+# Per-service runtime artifacts
+services/**/.env
+services/**/__pycache__/
+services/**/*.pyc
+services/**/*.pyo
+services/**/*.DS_Store
+services/fin_agent/logs/
+services/fin_agent/reports/
+services/fin_agent/agent_run_*.log
+services/fin_llm/tongyi_dianjin
+services/fin_llm/tongyi_dianjin/
+services/fin_llm/qwen/
+services/fin_llm/tongyi/
+services/fin_data_svr/.ipynb_checkpoints/
+services/fin_data_svr/logs/
+
+# Git backup area for old split repos
+.repo_git_backups/

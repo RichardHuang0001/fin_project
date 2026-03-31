@@ -1,0 +1,13 @@
+[Unit]
+Description=fin_data_svr MCP service (manual stdio debug)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/fin/services/fin_data_svr
+ExecStart=/bin/bash -lc '/srv/fin/services/fin_data_svr/scripts/start.sh'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

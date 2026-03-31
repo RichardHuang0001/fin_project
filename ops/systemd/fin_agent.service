@@ -1,0 +1,11 @@
+[Unit]
+Description=fin_agent smoke runner (CLI-oriented)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/fin/services/fin_agent
+ExecStart=/bin/bash -lc '/srv/fin/services/fin_agent/scripts/selftest.sh'
+
+[Install]
+WantedBy=multi-user.target

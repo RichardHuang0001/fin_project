@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+logs/
+*.log
+tongyi_dianjin
+tongyi_dianjin/
+qwen/
+tongyi/

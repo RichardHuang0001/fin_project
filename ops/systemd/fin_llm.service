@@ -1,0 +1,13 @@
+[Unit]
+Description=fin_llm service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/fin/services/fin_llm
+ExecStart=/bin/bash -lc '/srv/fin/services/fin_llm/scripts/start.sh'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

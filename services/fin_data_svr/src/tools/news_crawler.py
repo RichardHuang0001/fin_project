@@ -46,7 +46,14 @@ def register_news_crawler_tools(app: FastMCP, data_source: FinancialDataSource):
         try:
             logger.info(f"开始爬取新闻，查询词: {query}, 数量: {top_k}")
             result = data_source.crawl_news(query, top_k)
-            logger.info(f"新闻爬取完成，返回结果长度: {len(result)}")
+            preview = result[:300].replace("\n", "\\n")
+            logger.info(
+                "新闻爬取完成，query=%s, top_k=%s, 返回结果长度=%s, preview=%s",
+                query,
+                top_k,
+                len(result),
+                preview,
+            )
             return result
         except Exception as e:
             logger.error(f"爬取新闻时出错: {e}")

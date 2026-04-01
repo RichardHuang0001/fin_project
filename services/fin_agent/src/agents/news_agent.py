@@ -17,6 +17,11 @@ from src.utils.state_definition import AgentState
 from src.tools.mcp_client import get_mcp_tools
 from src.utils.logging_config import setup_logger, ERROR_ICON, SUCCESS_ICON, WAIT_ICON
 from src.utils.execution_logger import get_execution_logger
+from src.utils.agent_trace import (
+    summarize_exception,
+    summarize_react_messages,
+    summarize_request_context,
+)
 from dotenv import load_dotenv
 
 # 从.env文件加载环境变量
@@ -71,6 +76,10 @@ async def news_agent(state: AgentState) -> AgentState:
     # 记录 Agent开始时间，用于计算执行时长
     agent_start_time = time.time()
 
+    model_config = {}
+    tool_names = []
+    agent_input = ""
+
     try:
         # 使用API调用
         api_key = os.getenv("OPENAI_COMPATIBLE_API_KEY")
@@ -86,12 +95,18 @@ async def news_agent(state: AgentState) -> AgentState:
 
         logger.info(f"{WAIT_ICON} NewsAgent: Creating ChatOpenAI with model {model_name}")
         # 创建LLM实例，设置合适的参数
+        model_config = {
+            "model": model_name,
+            "temperature": 0.3,
+            "max_tokens": 6000,
+            "api_base": base_url
+        }
         llm = ChatOpenAI(
             model=model_name,
             api_key=api_key,
             base_url=base_url,
             temperature=0.3,  # 较低的温度确保分析的一致性
-            max_tokens=2000   # 增加token数量用于详细分析
+            max_tokens=6000   # 增加token数量用于详细分析
         )
 
         # 2. 获取MCP工具集
@@ -115,6 +130,10 @@ async def news_agent(state: AgentState) -> AgentState:
             # 打印可用工具列表，便于调试
             tool_names = [tool.name for tool in mcp_tools]
             logger.info(f"Available tools: {tool_names}")
+            execution_logger.log_agent_trace(agent_name, "tool_catalog", {
+                "tool_count": len(tool_names),
+                "tool_names": tool_names,
+            })
 
             # 3. 创建ReAct Agent - 只传入LLM和工具
             logger.info(
@@ -144,6 +163,11 @@ async def news_agent(state: AgentState) -> AgentState:
 请使用可用的工具获取实际新闻数据进行分析，确保情感分析和风险评估的准确性。如果某些新闻无法获取，请基于可用信息提供尽可能全面的分析。"""
 
             logger.info(f"Agent input: {agent_input}")
+            execution_logger.log_agent_trace(
+                agent_name,
+                "request_context",
+                summarize_request_context(agent_input, model_config, tool_names),
+            )
 
             # 5. 调用ReAct Agent - 使用正确的messages格式
             logger.info(
@@ -169,6 +193,18 @@ async def news_agent(state: AgentState) -> AgentState:
 
             if "messages" in response and isinstance(response["messages"], list):
                 messages = response["messages"]
+                message_trace = summarize_react_messages(messages)
+                execution_logger.log_agent_trace(
+                    agent_name,
+                    "react_messages",
+                    message_trace,
+                )
+                logger.info(
+                    "NewsAgent message trace: ai_tool_call_count=%s, tool_message_count=%s, pseudo_tool_signal_count=%s",
+                    message_trace["ai_tool_call_count"],
+                    message_trace["tool_message_count"],
+                    message_trace["pseudo_tool_signal_count"],
+                )
                 # 查找最后一条AI消息，这通常包含最终的分析结果
                 ai_messages = [
                     msg for msg in messages if isinstance(msg, AIMessage)]
@@ -195,13 +231,6 @@ async def news_agent(state: AgentState) -> AgentState:
                 f"Final extracted analysis length: {len(final_output)} characters")
             print(f"NEWSAGENT: {final_output}")
             # 7. 记录LLM交互，用于后续分析和优化
-            model_config = {
-                "model": model_name,
-                "temperature": 0.3,
-                "max_tokens": 2000,
-                "api_base": base_url
-            }
-            
             execution_logger.log_llm_interaction(
                 agent_name=agent_name,
                 interaction_type="react_agent",
@@ -242,6 +271,17 @@ async def news_agent(state: AgentState) -> AgentState:
         except Exception as e:
             logger.error(
                 f"{ERROR_ICON} NewsAgent: Error in MCP or agent execution: {e}", exc_info=True)
+            execution_logger.log_agent_trace(
+                agent_name,
+                "agent_error",
+                summarize_exception(
+                    e,
+                    stage="react_agent_execution",
+                    model_config=model_config,
+                    tool_names=tool_names,
+                    agent_input=agent_input,
+                ),
+            )
             current_data[
                 "news_analysis_error"] = f"Error in MCP or agent execution: {e}"
             current_data["news_analysis"] = f"新闻分析过程中出现错误: {str(e)}"
@@ -260,6 +300,17 @@ async def news_agent(state: AgentState) -> AgentState:
     except Exception as e:
         logger.error(
             f"{ERROR_ICON} NewsAgent: Error during execution: {e}", exc_info=True)
+        execution_logger.log_agent_trace(
+            agent_name,
+            "agent_error",
+            summarize_exception(
+                e,
+                stage="agent_setup",
+                model_config=model_config,
+                tool_names=tool_names,
+                agent_input=agent_input,
+            ),
+        )
         current_data["news_analysis_error"] = f"Error during execution: {e}"
         current_metadata["news_agent_error"] = str(e)
 

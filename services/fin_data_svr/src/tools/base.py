@@ -12,6 +12,36 @@ from src.data_source_interface import NoDataFoundError, LoginError, DataSourceEr
 logger = logging.getLogger(__name__)
 
 
+def _compact_kwargs(kwargs: dict) -> str:
+    """生成适合日志展示的紧凑参数摘要。"""
+    parts = []
+    for key, value in kwargs.items():
+        text = repr(value)
+        if len(text) > 120:
+            text = text[:117] + "..."
+        parts.append(f"{key}={text}")
+    return ", ".join(parts)
+
+
+def _log_dataframe_result(tool_name: str, data_type_name: str, df: pd.DataFrame) -> None:
+    """记录数据结果的简要信息，便于确认工具是否真的执行。"""
+    row_count = len(df.index)
+    columns = list(df.columns)
+    preview = {}
+    if row_count > 0:
+        first_row = df.iloc[0].to_dict()
+        for key, value in list(first_row.items())[:6]:
+            preview[key] = value
+    logger.info(
+        "Tool '%s' executed successfully for %s: rows=%s, columns=%s, first_row_preview=%s",
+        tool_name,
+        data_type_name,
+        row_count,
+        columns,
+        preview,
+    )
+
+
 def safe_data_source_call(
     tool_name: str,
     data_source_method: Callable,
@@ -31,9 +61,15 @@ def safe_data_source_call(
         Markdown格式的结果字符串或错误消息
     """
     try:
+        logger.info(
+            "Tool '%s' invoking data source for %s with args: %s",
+            tool_name,
+            data_type_name,
+            _compact_kwargs(kwargs),
+        )
         # 调用数据源方法
         df = data_source_method(**kwargs)
-        logger.info(f"Successfully retrieved {data_type_name} data.")
+        _log_dataframe_result(tool_name, data_type_name, df)
         return format_df_to_markdown(df)
         
     except NoDataFoundError as e:
@@ -88,8 +124,11 @@ def call_financial_data_tool(
 
         # 调用已实例化的active_data_source上的相应方法
         df = data_source_method(code=code, year=year, quarter=quarter)
-        logger.info(
-            f"Successfully retrieved {data_type_name} data for {code}, {year}Q{quarter}.")
+        _log_dataframe_result(
+            tool_name,
+            f"{data_type_name} data for {code}, {year}Q{quarter}",
+            df,
+        )
         # 对财务表格使用较小的限制？
         return format_df_to_markdown(df)
 

@@ -45,6 +45,7 @@ class ExecutionLogger:
         (execution_dir / "llm_interactions").mkdir(exist_ok=True)
         (execution_dir / "tools").mkdir(exist_ok=True)
         (execution_dir / "reports").mkdir(exist_ok=True)
+        (execution_dir / "traces").mkdir(exist_ok=True)
 
         return execution_dir
 
@@ -163,6 +164,18 @@ class ExecutionLogger:
         self._append_jsonl(tool_log, tools_file)
 
         return tool_log
+
+    def log_agent_trace(self, agent_name: str, trace_type: str, payload: Dict[str, Any]):
+        """记录轻量级链路追踪信息，便于排查工具调用和消息流转。"""
+        trace_log = {
+            "timestamp": datetime.now().isoformat(),
+            "agent_name": agent_name,
+            "trace_type": trace_type,
+            "payload": payload,
+        }
+        trace_file = f"traces/{agent_name}_{trace_type}.jsonl"
+        self._append_jsonl(trace_log, trace_file)
+        return trace_log
 
     def log_final_report(self, report_content: str, report_path: str):
         """记录最终生成的报告"""

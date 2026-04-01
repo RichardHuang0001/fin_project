@@ -11,6 +11,17 @@ from src.formatting.markdown_formatter import format_df_to_markdown
 logger = logging.getLogger(__name__)
 
 
+def _preview_dataframe(df) -> dict:
+    """提取结果预览，帮助确认工具是否真实执行。"""
+    if df is None or getattr(df, "empty", True):
+        return {}
+    row = df.iloc[0].to_dict()
+    preview = {}
+    for key, value in list(row.items())[:6]:
+        preview[key] = value
+    return preview
+
+
 def safe_data_fetch(
     func_name: str,
     data_source_func: Callable,
@@ -30,11 +41,23 @@ def safe_data_fetch(
         Markdown格式的数据表格或错误消息
     """
     try:
+        logger.info(
+            "Tool '%s' invoking data source with args=%s kwargs=%s",
+            func_name,
+            args,
+            kwargs,
+        )
         # 调用数据源函数
         df = data_source_func(*args, **kwargs)
         
         # 格式化结果
-        logger.info(f"Successfully retrieved data for {func_name}, formatting to Markdown.")
+        logger.info(
+            "Tool '%s' executed successfully: rows=%s, columns=%s, first_row_preview=%s",
+            func_name,
+            len(df.index),
+            list(df.columns),
+            _preview_dataframe(df),
+        )
         return format_df_to_markdown(df)
         
     except NoDataFoundError as e:

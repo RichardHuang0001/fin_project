@@ -14,7 +14,7 @@ from langgraph.prebuilt import create_react_agent
 import time
 
 from src.utils.state_definition import AgentState
-from src.tools.mcp_client import get_mcp_tools
+from src.tools.mcp_client import get_mcp_tools, select_mcp_tools_by_name
 from src.utils.logging_config import setup_logger, ERROR_ICON, SUCCESS_ICON, WAIT_ICON
 from src.utils.execution_logger import get_execution_logger
 from src.utils.agent_trace import (
@@ -28,6 +28,14 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 logger = setup_logger(__name__)
+
+TECHNICAL_ALLOWED_TOOLS = [
+    "get_stock_basic_info",
+    "get_historical_k_data",
+    "get_trade_dates",
+    "get_latest_trading_date",
+]
+AGENT_MAX_TOKENS = 1024
 
 
 async def technical_agent(state: AgentState) -> AgentState:
@@ -92,7 +100,7 @@ async def technical_agent(state: AgentState) -> AgentState:
         model_config = {
             "model": model_name,
             "temperature": 0.3,
-            "max_tokens": 6000,
+            "max_tokens": AGENT_MAX_TOKENS,
             "api_base": base_url
         }
         llm = ChatOpenAI(
@@ -100,7 +108,7 @@ async def technical_agent(state: AgentState) -> AgentState:
             api_key=api_key,
             base_url=base_url,
             temperature=0.3,  # 较低的温度确保分析的一致性
-            max_tokens=6000   # 增加token数量用于详细分析
+            max_tokens=AGENT_MAX_TOKENS
         )
 
         # 2. 获取MCP工具集
@@ -114,6 +122,10 @@ async def technical_agent(state: AgentState) -> AgentState:
                 return {"data": current_data, "messages": current_messages, "metadata": current_metadata}
 
             logger.info(f"{SUCCESS_ICON} TechnicalAgent: Successfully loaded {len(mcp_tools)} tools.")
+            mcp_tools = select_mcp_tools_by_name(
+                mcp_tools, TECHNICAL_ALLOWED_TOOLS)
+            if not mcp_tools:
+                raise RuntimeError("Filtered MCP tools are empty for technical agent")
 
             # 打印可用工具列表，便于调试
             tool_names = [tool.name for tool in mcp_tools]
@@ -134,23 +146,26 @@ async def technical_agent(state: AgentState) -> AgentState:
             current_date = current_data.get('current_date', '未知日期')
             
             # 构建详细的技术分析请求，包含多个分析维度
-            agent_input = f"""请分析{company_name}（股票代码：{stock_code}）的技术指标。
+            agent_input = f"""你是技术分析代理，只能基于工具返回的数据回答。
 
+目标股票：{company_name}（{stock_code}）
 当前时间：{current_time_info}
-当前日期：{current_date}
 
-请进行以下技术分析：
-1. 获取股票基本信息和最新价格
-2. 获取历史K线数据（建议获取最近3-6个月的数据）
-3. 分析价格趋势和技术形态
-4. 分析成交量变化
-5. 计算和分析主要技术指标（如移动平均线、MACD、RSI等）
-6. 识别支撑位和阻力位
-7. 提供技术面总结和短期走势判断
+硬性要求：
+1. 只在需要数据时返回真实工具调用，不要输出工具计划文本。
+2. 优先获取最近交易日和近 3 个月 K 线，再做分析。
+3. 不能编造价格、成交量、均线、MACD、RSI 等数据。
+4. 拿到工具结果后，再输出简洁结论。
 
-重要限制：请专注于价格数据和技术指标分析，不要使用crawl_news工具获取新闻信息。技术分析应该基于价格走势、成交量和技术指标数据，而不是新闻事件。
+任务：
+- 获取基础行情与最近一段 K 线
+- 判断趋势、支撑阻力和短线技术信号
+- 输出技术面结论和风险提示
 
-请使用可用的工具获取实际数据进行分析，而不是基于假设。"""
+禁止事项：
+- 不要使用新闻视角
+- 不要凭经验直接下结论
+- 不要在正文里写伪 JSON、伪函数调用或工具计划"""
 
             logger.info(f"Agent input: {agent_input}")
             execution_logger.log_agent_trace(

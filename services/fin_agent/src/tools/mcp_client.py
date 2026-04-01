@@ -80,6 +80,24 @@ async def get_mcp_tools():
         return []
 
 
+def select_mcp_tools_by_name(tools, allowed_tool_names):
+    """按工具名筛选 MCP 工具，保留原顺序。"""
+    if not tools:
+        return []
+
+    allowed = set(allowed_tool_names or [])
+    filtered_tools = [tool for tool in tools if tool.name in allowed]
+
+    missing = sorted(allowed.difference({tool.name for tool in filtered_tools}))
+    if missing:
+        logger.warning(
+            f"{ERROR_ICON} Some requested MCP tools were not found: {missing}")
+
+    logger.info(
+        f"{SUCCESS_ICON} Selected {len(filtered_tools)}/{len(tools)} MCP tools: {[tool.name for tool in filtered_tools]}")
+    return filtered_tools
+
+
 async def close_mcp_client_sessions():
     """
     关闭MultiServerMCPClient管理的任何开放会话。

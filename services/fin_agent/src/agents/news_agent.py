@@ -14,7 +14,7 @@ from langgraph.prebuilt import create_react_agent
 import time
 
 from src.utils.state_definition import AgentState
-from src.tools.mcp_client import get_mcp_tools
+from src.tools.mcp_client import get_mcp_tools, select_mcp_tools_by_name
 from src.utils.logging_config import setup_logger, ERROR_ICON, SUCCESS_ICON, WAIT_ICON
 from src.utils.execution_logger import get_execution_logger
 from src.utils.agent_trace import (
@@ -28,6 +28,12 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 logger = setup_logger(__name__)
+
+NEWS_ALLOWED_TOOLS = [
+    "get_stock_basic_info",
+    "crawl_news",
+]
+AGENT_MAX_TOKENS = 1024
 
 
 async def news_agent(state: AgentState) -> AgentState:
@@ -98,7 +104,7 @@ async def news_agent(state: AgentState) -> AgentState:
         model_config = {
             "model": model_name,
             "temperature": 0.3,
-            "max_tokens": 6000,
+            "max_tokens": AGENT_MAX_TOKENS,
             "api_base": base_url
         }
         llm = ChatOpenAI(
@@ -106,7 +112,7 @@ async def news_agent(state: AgentState) -> AgentState:
             api_key=api_key,
             base_url=base_url,
             temperature=0.3,  # 较低的温度确保分析的一致性
-            max_tokens=6000   # 增加token数量用于详细分析
+            max_tokens=AGENT_MAX_TOKENS
         )
 
         # 2. 获取MCP工具集
@@ -126,6 +132,10 @@ async def news_agent(state: AgentState) -> AgentState:
 
             logger.info(
                 f"{SUCCESS_ICON} NewsAgent: Successfully loaded {len(mcp_tools)} tools.")
+            mcp_tools = select_mcp_tools_by_name(
+                mcp_tools, NEWS_ALLOWED_TOOLS)
+            if not mcp_tools:
+                raise RuntimeError("Filtered MCP tools are empty for news agent")
 
             # 打印可用工具列表，便于调试
             tool_names = [tool.name for tool in mcp_tools]
@@ -147,20 +157,21 @@ async def news_agent(state: AgentState) -> AgentState:
             current_date = current_data.get('current_date', '未知日期')
 
             # 构建详细的新闻分析请求，包含多个分析维度
-            agent_input = f"""请对{company_name}（股票代码：{stock_code}）进行新闻分析。
+            agent_input = f"""你是新闻分析代理，只能基于工具返回的数据回答。
 
+目标股票：{company_name}（{stock_code}）
 当前时间：{current_time_info}
-当前日期：{current_date}
 
-请进行以下新闻分析：
-1. 爬取与{company_name}相关的最新新闻（至少5条）
-2. 对每条新闻进行情感分析，评估新闻对公司的情感影响（1-5分：1=负面，2=轻微负面，3=中性，4=正面，5=极正面）
-3. 对每条新闻进行风险评估，评估新闻对公司的风险影响（1-5分：1=极低风险，2=低风险，3=中等风险，4=高风险，5=极高风险）
-4. 分析新闻对股价的潜在影响
-5. 识别关键新闻事件和趋势
-6. 提供基于新闻的综合投资建议
+硬性要求：
+1. 先调用 `crawl_news` 获取新闻，不要直接凭空总结。
+2. 不要输出工具计划文本，不要在正文里写伪 JSON。
+3. 不要编造新闻标题、时间、情绪或风险结论。
+4. 拿到工具结果后，再输出新闻摘要、情绪倾向和风险提示。
 
-请使用可用的工具获取实际新闻数据进行分析，确保情感分析和风险评估的准确性。如果某些新闻无法获取，请基于可用信息提供尽可能全面的分析。"""
+任务：
+- 获取相关新闻
+- 概括主要事件
+- 给出情绪偏向、风险点和一句结论"""
 
             logger.info(f"Agent input: {agent_input}")
             execution_logger.log_agent_trace(

@@ -14,7 +14,7 @@ from langgraph.prebuilt import create_react_agent
 import time
 
 from src.utils.state_definition import AgentState
-from src.tools.mcp_client import get_mcp_tools
+from src.tools.mcp_client import get_mcp_tools, select_mcp_tools_by_name
 from src.utils.logging_config import setup_logger, ERROR_ICON, SUCCESS_ICON, WAIT_ICON
 from src.utils.execution_logger import get_execution_logger
 from src.utils.agent_trace import (
@@ -28,6 +28,19 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 logger = setup_logger(__name__)
+
+FUNDAMENTAL_ALLOWED_TOOLS = [
+    "get_stock_basic_info",
+    "get_stock_industry",
+    "get_profit_data",
+    "get_growth_data",
+    "get_balance_data",
+    "get_cash_flow_data",
+    "get_dividend_data",
+    "get_performance_express_report",
+    "get_forecast_report",
+]
+AGENT_MAX_TOKENS = 1024
 
 
 async def fundamental_agent(state: AgentState) -> AgentState:
@@ -104,7 +117,7 @@ async def fundamental_agent(state: AgentState) -> AgentState:
         model_config = {
             "model": model_name,
             "temperature": 0.3,
-            "max_tokens": 6000,
+            "max_tokens": AGENT_MAX_TOKENS,
             "api_base": base_url
         }
         llm = ChatOpenAI(
@@ -112,7 +125,7 @@ async def fundamental_agent(state: AgentState) -> AgentState:
             api_key=api_key,
             base_url=base_url,
             temperature=0.3,  # 较低的温度确保分析的一致性
-            max_tokens=6000   # 增加token数量用于详细分析
+            max_tokens=AGENT_MAX_TOKENS
         )
 
         # 2. 获取MCP工具集
@@ -132,6 +145,10 @@ async def fundamental_agent(state: AgentState) -> AgentState:
 
             logger.info(
                 f"{SUCCESS_ICON} FundamentalAgent: Successfully loaded {len(mcp_tools)} tools.")
+            mcp_tools = select_mcp_tools_by_name(
+                mcp_tools, FUNDAMENTAL_ALLOWED_TOOLS)
+            if not mcp_tools:
+                raise RuntimeError("Filtered MCP tools are empty for fundamental agent")
 
             # 打印可用工具列表，便于调试
             tool_names = [tool.name for tool in mcp_tools]
@@ -153,24 +170,26 @@ async def fundamental_agent(state: AgentState) -> AgentState:
             current_date = current_data.get('current_date', '未知日期')
 
             # 构建详细的基本面分析请求，包含多个分析维度
-            agent_input = f"""请分析{company_name}（股票代码：{stock_code}）的基本面情况。
+            agent_input = f"""你是基本面分析代理，只能基于工具返回的数据回答。
 
+目标股票：{company_name}（{stock_code}）
 当前时间：{current_time_info}
-当前日期：{current_date}
 
-请进行以下基本面分析：
-1. 获取公司基本信息和行业背景
-2. 获取最新财务报表数据（资产负债表、利润表、现金流量表）
-3. 分析盈利能力指标（毛利率、净利率、ROE等）
-4. 分析成长能力指标（收入增长率、利润增长率等）
-5. 分析运营效率指标（应收周转率、存货周转率等）
-6. 分析偿债能力指标（资产负债率、流动比率等）
-7. 查询历史分红情况
-8. 提供基本面综合评估和投资价值分析
+硬性要求：
+1. 只在需要数据时返回真实工具调用，不要输出“我将调用工具”之类的计划文本。
+2. 不要编造任何财务数字、新闻或公司事件。
+3. 如果工具返回不足，再继续调用下一个最相关工具；单轮优先调用一个工具。
+4. 拿到工具结果后，再给出简洁结论。
 
-重要限制：请专注于财务数据和基本面指标分析，不要使用crawl_news工具获取新闻信息。基本面分析应该基于财务报表、财务指标和公司基本面数据，而不是新闻事件。
+任务：
+- 获取公司基本信息和行业信息
+- 获取盈利、成长、资产负债、现金流、分红相关数据
+- 输出基本面结论、主要风险和一句投资判断
 
-请使用可用的工具获取实际数据进行分析，而不是基于假设。如果某些数据无法获取，请尝试使用不同的时间周期或其他工具组合，基于可用信息提供尽可能全面的分析。"""
+禁止事项：
+- 不要使用新闻视角
+- 不要直接凭常识回答
+- 不要在正文里写伪 JSON、伪函数调用或工具计划"""
 
             logger.info(f"Agent input: {agent_input}")
             execution_logger.log_agent_trace(

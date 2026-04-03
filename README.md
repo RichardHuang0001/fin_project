@@ -3,18 +3,26 @@
 金融多服务项目总仓库。
 
 ## 目录
-- `services/fin_agent`：主服务，负责 Agent 编排、分析流程和报告生成。
+- `services/fin_agent`：主服务，负责 Agent 编排、代码主导取数、分析流程和报告生成。
 - `services/fin_llm`：模型服务，负责本地大模型推理与 OpenAI 兼容接口。
 - `services/fin_data_svr`：数据服务，负责 MCP 工具、行情/财务/新闻数据获取。
 - `ops`：环境模板、部署脚本、systemd 示例、说明文档。
 
-## 今天完成的规范化改造
+## 当前项目结构
+- `fin_agent` 保留多 Agent 工作流，但工具调用不再依赖模型自动 `tool calling`。
+- 当前 4 个分析 Agent（基本面、技术面、估值、新闻）采用统一的“代码主导取数 + LLM 总结”模式。
+- 新增轻量执行层：
+  - `services/fin_agent/src/agents/data_driven_executor.py`
+- 每个 Agent 只维护自己的 profile、允许工具集和取数步骤，后续新增市场或 Agent 时按同样方式扩展。
+
+## 已完成的规范化改造
 - 统一了总目录结构，当前服务器标准目录为 `/srv/fin`。
 - 三个核心服务都拆成独立运行环境，不再共用一个混乱环境。
 - 配置集中到 `/srv/fin/config`，代码不再依赖个人电脑路径。
 - `fin_llm` 已切到 `vLLM + OpenAI-compatible API` 方案。
 - `fin_data_svr` 已完成独立环境与自测脚本整理。
 - `fin_agent` 已完成独立环境整理，并修复了 API 模式下对本地模型依赖的错误导入问题。
+- `fin_agent` 已完成“代码主导工具调用”重构，真实 MCP 工具调用已恢复。
 
 ## 当前 conda 环境
 - `fin_llm_py312`
@@ -78,6 +86,7 @@ cd /srv/fin/services/fin_agent
 说明：
 - `fin_agent` 会按配置自动调用 `fin_llm`。
 - `fin_agent` 会按配置自动拉起 `fin_data_svr` 的 MCP 进程。
+- 现在的 `fin_agent` 不再要求模型自己发起 `tool_calls`，而是由代码按 Agent profile 主动取数，再交给模型总结。
 
 ### 5. 测试 fin_agent
 简单接口测试：
@@ -110,6 +119,17 @@ tail -f /srv/fin/logs/fin_agent/e2e_smoke.log
 ls -lt /srv/fin/services/fin_agent/logs
 ```
 
+### 看 Agent trace
+```bash
+ls -lt /srv/fin/services/fin_agent/logs/<执行目录>/traces
+```
+重点看：
+- `tool_catalog`
+- `tool_plan`
+- `tool_results`
+- `request_context`
+- `agent_error`
+
 ### 看数据服务日志/健康检查
 ```bash
 conda activate /root/autodl-tmp/conda-envs/fin_data_py312
@@ -127,7 +147,8 @@ cd /srv/fin/services/fin_data_svr
 - `fin_llm`：已能正常启动，且协议层支持 tool calling。
 - `fin_data_svr`：已能正常自测并访问 Baostock。
 - `fin_agent`：已能跑通主流程并生成报告。
-- 已知问题：当前模型在完整 Agent 工作流中，仍不能稳定自动触发 MCP 工具调用，因此业务效果还未完全达到目标。
+- 真实 MCP 调用已恢复，日志中可看到 `CallToolRequest` 和具体工具执行记录。
+- 当前剩余问题主要是数据源层面的缺数或返回为空，例如部分业绩快报/预告区间无数据。
 
 ## 常用位置
 - 总仓库：`/srv/fin`
@@ -154,4 +175,4 @@ cd /srv/fin/services/fin_data_svr
 - 改环境、改依赖、改配置前，先看 README 和 `ops` 目录里的说明。
 
 ## 一句话说明
-这个仓库现在已经不是最初那种临时拼起来的代码目录，而是一个按服务拆分、按环境隔离、适合多人协作的单仓库项目；但核心业务上仍有一个待解决问题：模型还不能稳定驱动 MCP 工具调用。
+这个仓库现在已经是一个按服务拆分、按环境隔离、适合多人协作的单仓库项目；当前主链路已经改成“代码主导取数 + LLM 总结”，核心 MCP 调用问题已修复。

@@ -88,7 +88,26 @@ cd /srv/fin/services/fin_agent
 - `fin_agent` 会按配置自动拉起 `fin_data_svr` 的 MCP 进程。
 - 现在的 `fin_agent` 不再要求模型自己发起 `tool_calls`，而是由代码按 Agent profile 主动取数，再交给模型总结。
 
-### 5. 测试 fin_agent
+### 5. 启动 FinMind 前端界面 (Web UI)
+如果你想通过浏览器使用图形化界面进行分析，可以按照以下步骤启动：
+
+```bash
+# 1. 激活环境 (前端后端桥接使用 fin_agent 环境)
+conda activate /root/autodl-tmp/conda-envs/fin_agent_py312
+
+# 2. 进入前端目录
+cd /srv/fin/frontend
+
+# 3. 运行启动脚本
+./start_frontend.sh
+```
+
+**运行说明：**
+- **后端 API**：监听 `http://localhost:8000`，负责与 `fin_agent` 核心逻辑交互。
+- **前端 Web**：监听 `http://localhost:8080`，提供基于浏览器的 UI 界面。
+- **访问方式**：在本地浏览器访问 `http://localhost:8080` 即可开始对话分析。
+
+### 6. 测试 fin_agent
 简单接口测试：
 ```bash
 conda activate /root/autodl-tmp/conda-envs/fin_agent_py312

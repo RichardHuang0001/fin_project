@@ -21,6 +21,9 @@ logger = setup_logger(__name__)
 def _quarter_args(current_data):
     args = get_previous_completed_quarter(current_data)
     args["code"] = current_data.get("stock_code")
+    # Ensure year is string for tool validation
+    if "year" in args:
+        args["year"] = str(args["year"])
     return args
 
 
@@ -96,7 +99,7 @@ FUNDAMENTAL_PROFILE = AnalysisProfile(
             label="分红信息",
             args_builder=lambda data: {
                 "code": data.get("stock_code"),
-                "year": get_previous_completed_quarter(data)["year"],
+                "year": str(get_previous_completed_quarter(data)["year"]),
                 "year_type": "report",
             },
             required=False,

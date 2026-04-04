@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+# Add dependencies needed for fin_agent to avoid import errors
+langchain
+langchain-openai
+langgraph
+requests
+baostock
+pandas
+beautifulsoup4
+lxml
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+aiohttp

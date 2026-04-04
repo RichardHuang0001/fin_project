@@ -190,8 +190,12 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
 
     # 从状态中提取当前数据、消息和用户查询
     current_data = state.get("data", {})
+    print(f"\n[DEBUG] SummaryAgent current_data: {current_data}\n")
     messages = state.get("messages", [])
     user_query = current_data.get("query", "")
+    intent = current_data.get("intent", {})
+    target_tasks = intent.get("tasks", [])
+    reasoning = intent.get("reasoning", "")
 
     # 记录 Agent开始执行，包含可用的分析类型
     execution_logger.log_agent_start(agent_name, {
@@ -256,26 +260,32 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
         # 准备汇总的系统提示词
         # 准备汇总的系统提示词（精简版）
         system_prompt = f"""
-        你是专业金融分析师。请基于提供的四类分析结果，生成 {company_name}（{stock_code}）的综合分析报告。
+        你是专业金融分析师。请基于提供的分析结果，回答用户关于 {company_name}（{stock_code}）的问题。
+
+        用户原始意图：{reasoning}
+        关注任务：{', '.join(target_tasks) if target_tasks else '全量分析'}
 
         时间基准：{current_time_info}（日期：{current_date}）。
         所有“近期/最新/历史”判断都以该时间为准。
 
-        请用 Markdown 输出，结构固定为：
-        1. 执行摘要
-        2. 公司概况
-        3. 基本面分析
-        4. 技术分析
-        5. 估值分析
-        6. 新闻分析
-        7. 综合评估
-        8. 风险因素
-        9. 投资建议
-        10. 数据来源与限制
+        ### 排版要求：
+        - 使用清晰的 Markdown 标题结构（H2, H3）。
+        - 关键结论和重要数据请**加粗**显示。
+        - 财务数据、对比数据请尽可能使用 Markdown **表格**展示。
+        - 列表项使用标准无序列表，确保层次分明。
+        - 段落之间保持适当空行。
 
-        要求：
+        ### 报告要求：
+        - 如果用户问的是特定问题（如“估值如何”），请**直接且重点回答该问题**，不要生搬硬套全量模板。
+        - 如果用户问的是全量分析，请按以下结构输出：
+            1. **执行摘要**
+            2. **分析维度**（包含基本面、技术面、估值、新闻等已有的部分）
+            3. **综合评估与建议**
+            4. **风险因素**
+        - 如果某些分析维度数据为 "Not available"，请跳过该章节，不要提及。
+        
+        ### 注意事项：
         - 信息不足时明确写“数据不足/未获取”，不要编造数据。
-        - 结论要给出依据与不确定性。
         - 不要输出代码块标记（```）。
         - 报告末尾注明：分析基准时间：{current_time_info}。
         """

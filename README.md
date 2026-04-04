@@ -6,6 +6,8 @@
 - `services/fin_agent`：主服务，负责 Agent 编排、代码主导取数、分析流程和报告生成。
 - `services/fin_llm`：模型服务，负责本地大模型推理与 OpenAI 兼容接口。
 - `services/fin_data_svr`：数据服务，负责 MCP 工具、行情/财务/新闻数据获取。
+- `services/fin_api`：Web API 服务，负责对外暴露 HTTP 接口并桥接 `fin_agent`。
+- `services/fin_web`：Web 前端静态页面，提供浏览器交互界面。
 - `ops`：环境模板、部署脚本、systemd 示例、说明文档。
 
 ## 当前项目结构
@@ -95,16 +97,16 @@ cd /srv/fin/services/fin_agent
 # 1. 激活环境 (前端后端桥接使用 fin_agent 环境)
 conda activate /root/autodl-tmp/conda-envs/fin_agent_py312
 
-# 2. 进入前端目录
-cd /srv/fin/frontend
+# 2. 进入仓库目录
+cd /srv/fin
 
-# 3. 运行启动脚本
-./start_frontend.sh
+# 3. 运行统一启动脚本
+./ops/deploy/start_web_stack.sh
 ```
 
 **运行说明：**
-- **后端 API**：监听 `http://localhost:8000`，负责与 `fin_agent` 核心逻辑交互。
-- **前端 Web**：监听 `http://localhost:8080`，提供基于浏览器的 UI 界面。
+- **后端 API**：`services/fin_api`，监听 `http://localhost:8000`，负责与 `fin_agent` 核心逻辑交互。
+- **前端 Web**：`services/fin_web`，监听 `http://localhost:8080`，提供基于浏览器的 UI 界面。
 - **访问方式**：在本地浏览器访问 `http://localhost:8080` 即可开始对话分析。
 
 ### 6. 测试 fin_agent

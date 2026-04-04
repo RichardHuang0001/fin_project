@@ -10,6 +10,9 @@ models/
 
 # Per-service runtime artifacts
 services/**/.env
+**/__pycache__/
+**/.ipynb_checkpoints/
+._*
 services/**/__pycache__/
 services/**/*.pyc
 services/**/*.pyo
@@ -26,3 +29,5 @@ services/fin_data_svr/logs/
 
 # Git backup area for old split repos
 .repo_git_backups/
+
+services/fin_api/logs/

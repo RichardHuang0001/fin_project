@@ -40,6 +40,7 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 from src.utils.logging_config import setup_logger, SUCCESS_ICON, ERROR_ICON, WAIT_ICON
 from src.utils.state_definition import AgentState
 from src.utils.execution_logger import initialize_execution_logger, finalize_execution_logger, get_execution_logger
+from src.utils.streaming import emit_event, get_event_sink
 
 # 智能体模块导入 - 六个核心分析智能体
 from src.agents.intent_agent import intent_agent       # 意图智能体：解析用户意图
@@ -342,7 +343,7 @@ def create_workflow():
 # 分析执行引擎
 # ============================================================================
 
-async def execute_analysis(user_query, execution_logger=None):
+async def execute_analysis(user_query, execution_logger=None, event_sink=None):
     """
     执行完整的金融分析流程
     
@@ -357,6 +358,18 @@ async def execute_analysis(user_query, execution_logger=None):
         execution_logger = initialize_execution_logger()
         
     try:
+        if event_sink:
+            await emit_event(
+                event_sink,
+                "status",
+                {
+                    "stage": "started",
+                    "message": "开始分析请求",
+                    "query": user_query,
+                },
+                trace_agent="analysis_engine",
+            )
+
         # 记录分析开始
         execution_logger.log_agent_start("analysis_engine", {"user_query": user_query})
         
@@ -395,7 +408,10 @@ async def execute_analysis(user_query, execution_logger=None):
         initial_state = AgentState(
             messages=[],
             data=initial_data,
-            metadata={}
+            metadata={
+                "event_sink": event_sink,
+                "enable_summary_stream": bool(event_sink),
+            }
         )
         
         # 4. 构建并执行工作流
@@ -410,12 +426,33 @@ async def execute_analysis(user_query, execution_logger=None):
             report_content = final_state["data"]["final_report"]
             report_path = final_state["data"].get("report_path", "")
             execution_logger.log_final_report(report_content, report_path)
+            if event_sink:
+                await emit_event(
+                    event_sink,
+                    "status",
+                    {
+                        "stage": "completed",
+                        "message": "分析完成",
+                        "report_path": report_path,
+                    },
+                    trace_agent="analysis_engine",
+                )
             
         return final_state
         
     except Exception as e:
         logger.error(f"Error in execute_analysis: {e}", exc_info=True)
         execution_logger.log_agent_error("analysis_engine", str(e))
+        if event_sink:
+            await emit_event(
+                event_sink,
+                "error",
+                {
+                    "stage": "analysis_engine",
+                    "message": str(e),
+                },
+                trace_agent="analysis_engine",
+            )
         raise e
 
 async def main():

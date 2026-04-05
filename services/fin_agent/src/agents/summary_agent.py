@@ -19,6 +19,7 @@ except ImportError:
 from src.utils.state_definition import AgentState
 from src.utils.logging_config import setup_logger, ERROR_ICON, SUCCESS_ICON, WAIT_ICON
 from src.utils.execution_logger import get_execution_logger
+from src.utils.streaming import emit_event, get_event_sink
 from dotenv import load_dotenv
 
 # 从.env文件加载环境变量
@@ -190,12 +191,14 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
 
     # 从状态中提取当前数据、消息和用户查询
     current_data = state.get("data", {})
-    print(f"\n[DEBUG] SummaryAgent current_data: {current_data}\n")
     messages = state.get("messages", [])
+    metadata = state.get("metadata", {})
     user_query = current_data.get("query", "")
     intent = current_data.get("intent", {})
     target_tasks = intent.get("tasks", [])
     reasoning = intent.get("reasoning", "")
+    event_sink = get_event_sink(metadata)
+    enable_summary_stream = bool(metadata.get("enable_summary_stream"))
 
     # 记录 Agent开始执行，包含可用的分析类型
     execution_logger.log_agent_start(agent_name, {
@@ -211,6 +214,17 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
 
     # 记录 Agent开始时间，用于计算执行时长
     agent_start_time = time.time()
+    await emit_event(
+        event_sink,
+        "progress",
+        {
+            "stage": "summary",
+            "status": "started",
+            "message": "正在生成最终报告",
+            "agent": agent_name,
+        },
+        trace_agent=agent_name,
+    )
 
     # 获取之前 Agent的分析结果
     fundamental_analysis = current_data.get(
@@ -418,9 +432,36 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
             # 记录LLM交互开始时间
             llm_start_time = time.time()
 
-            # 调用LLM生成最终报告
-            llm_message = await llm.ainvoke(summary_prompt_messages)
-            final_report = llm_message.content
+            final_report = ""
+            streamed_chunks = []
+            if enable_summary_stream:
+                try:
+                    async for chunk in llm.astream(summary_prompt_messages):
+                        chunk_text = getattr(chunk, "content", "") or ""
+                        if not chunk_text:
+                            continue
+                        streamed_chunks.append(chunk_text)
+                        await emit_event(
+                            event_sink,
+                            "summary_chunk",
+                            {
+                                "content": chunk_text,
+                                "agent": agent_name,
+                            },
+                            trace_agent=agent_name,
+                        )
+                    final_report = "".join(streamed_chunks).strip()
+                except Exception as stream_exc:
+                    logger.warning(
+                        "%s SummaryAgent: streaming failed, fallback to ainvoke: %s",
+                        WAIT_ICON,
+                        stream_exc,
+                    )
+                    final_report = ""
+
+            if not final_report:
+                llm_message = await llm.ainvoke(summary_prompt_messages)
+                final_report = llm_message.content
 
             # 记录LLM交互执行时间
             llm_execution_time = time.time() - llm_start_time
@@ -499,6 +540,18 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
             "llm_execution_time": llm_execution_time,
             "total_execution_time": total_execution_time
         }, total_execution_time, True)
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": "summary",
+                "status": "completed",
+                "message": "最终报告生成完成",
+                "agent": agent_name,
+                "report_path": report_path,
+            },
+            trace_agent=agent_name,
+        )
 
         return {"data": current_data, "messages": messages}
 
@@ -506,6 +559,17 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
         logger.error(
             f"{ERROR_ICON} SummaryAgent: Error generating final report: {e}", exc_info=True)
         current_data["summary_error"] = f"Error generating final report: {e}"
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": "summary",
+                "status": "error",
+                "message": f"最终报告生成失败：{e}",
+                "agent": agent_name,
+            },
+            trace_agent=agent_name,
+        )
 
         # 即使出现错误也创建最小化的报告
         error_report = f"""

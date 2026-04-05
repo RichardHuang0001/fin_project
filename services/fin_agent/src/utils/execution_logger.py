@@ -104,6 +104,25 @@ class ExecutionLogger:
         self._save_json(agent_log, agent_file)
         return agent_log
 
+    def log_agent_error(self, agent_name: str, error: str):
+        """记录 agent 错误，不中断原有日志流程。"""
+        agent_file = f"agents/{agent_name}_execution.json"
+        agent_log = self._load_json(agent_file) or {
+            "agent_name": agent_name,
+            "start_time": datetime.now().isoformat(),
+            "start_timestamp": time.time(),
+            "status": "started",
+        }
+        agent_log.update({
+            "end_time": datetime.now().isoformat(),
+            "end_timestamp": time.time(),
+            "success": False,
+            "error": error,
+            "status": "failed",
+        })
+        self._save_json(agent_log, agent_file)
+        return agent_log
+
     def log_llm_interaction(self, agent_name: str, interaction_type: str,
                             input_messages: List[Dict], output_content: str,
                             model_config: Dict[str, Any], execution_time: float,

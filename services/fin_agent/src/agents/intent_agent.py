@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI
 from src.utils.state_definition import AgentState
 from src.utils.logging_config import setup_logger, WAIT_ICON, SUCCESS_ICON, ERROR_ICON
 from src.utils.execution_logger import get_execution_logger
+from src.utils.streaming import emit_event, get_event_sink
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -29,11 +30,23 @@ async def intent_agent(state: AgentState) -> Dict[str, Any]:
     agent_name = "intent_agent"
     
     current_data = state.get("data", {})
+    metadata = state.get("metadata", {})
     user_query = current_data.get("query", "")
+    event_sink = get_event_sink(metadata)
     
     # 记录 Agent 开始
     execution_logger.log_agent_start(agent_name, {"user_query": user_query})
     start_time = time.time()
+    await emit_event(
+        event_sink,
+        "progress",
+        {
+            "stage": "intent",
+            "status": "started",
+            "message": "正在识别用户意图",
+        },
+        trace_agent=agent_name,
+    )
     
     # 获取 LLM 配置
     api_key = os.getenv("OPENAI_COMPATIBLE_API_KEY")
@@ -147,10 +160,33 @@ async def intent_agent(state: AgentState) -> Dict[str, Any]:
                 
         # 记录 Agent 完成
         execution_logger.log_agent_complete(agent_name, updated_data, time.time() - start_time, True)
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": "intent",
+                "status": "completed",
+                "message": "意图识别完成",
+                "tasks": intent_data.get("tasks", []),
+                "company_name": updated_data.get("company_name"),
+                "stock_code": updated_data.get("stock_code"),
+            },
+            trace_agent=agent_name,
+        )
         
         logger.info(f"{SUCCESS_ICON} IntentAgent: Identified tasks: {intent_data.get('tasks')}")
         return {"data": updated_data}
         
     except Exception as e:
         logger.error(f"{ERROR_ICON} IntentAgent: Error parsing intent: {e}")
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": "intent",
+                "status": "error",
+                "message": f"意图识别失败：{e}",
+            },
+            trace_agent=agent_name,
+        )
         return {"data": {**current_data, "intent_error": str(e)}}

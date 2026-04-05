@@ -23,6 +23,7 @@ from src.tools.mcp_client import get_mcp_tools, select_mcp_tools_by_name
 from src.utils.agent_trace import summarize_exception, summarize_request_context
 from src.utils.execution_logger import get_execution_logger
 from src.utils.state_definition import AgentState
+from src.utils.streaming import emit_event, get_event_sink
 
 load_dotenv(override=True)
 
@@ -184,6 +185,7 @@ async def run_data_driven_analysis(
     current_messages = state.get("messages", [])
     current_metadata = state.get("metadata", {})
     user_query = current_data.get("query")
+    event_sink = get_event_sink(current_metadata)
 
     execution_logger.log_agent_start(
         profile.agent_name,
@@ -193,6 +195,17 @@ async def run_data_driven_analysis(
             "company_name": current_data.get("company_name"),
             "input_data_keys": list(current_data.keys()),
         },
+    )
+    await emit_event(
+        event_sink,
+        "progress",
+        {
+            "stage": profile.metadata_prefix,
+            "status": "started",
+            "message": f"{profile.summary_title}开始取数分析",
+            "agent": profile.agent_name,
+        },
+        trace_agent=profile.agent_name,
     )
 
     if not user_query:
@@ -345,6 +358,19 @@ async def run_data_driven_analysis(
             "tool_plan",
             {"steps": plan_trace},
         )
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": profile.metadata_prefix,
+                "status": "tool_fetch_completed",
+                "message": f"{profile.summary_title}完成工具取数",
+                "agent": profile.agent_name,
+                "successful_tools": sum(1 for item in tool_results if item["status"] == "success"),
+                "total_tools": len(tool_results),
+            },
+            trace_agent=profile.agent_name,
+        )
         execution_logger.log_agent_trace(
             profile.agent_name,
             "tool_results",
@@ -397,6 +423,20 @@ async def run_data_driven_analysis(
             total_execution_time,
             True,
         )
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": profile.metadata_prefix,
+                "status": "completed",
+                "message": profile.completion_message,
+                "agent": profile.agent_name,
+                "successful_tools": sum(
+                    1 for item in tool_results if item["status"] == "success"
+                ),
+            },
+            trace_agent=profile.agent_name,
+        )
 
         logger.info("%s finished successfully with %s successful tool calls.", profile.agent_name, sum(
             1 for item in tool_results if item["status"] == "success"
@@ -429,6 +469,17 @@ async def run_data_driven_analysis(
             time.time() - agent_start_time,
             False,
             str(exc),
+        )
+        await emit_event(
+            event_sink,
+            "progress",
+            {
+                "stage": profile.metadata_prefix,
+                "status": "error",
+                "message": f"{profile.summary_title}失败：{exc}",
+                "agent": profile.agent_name,
+            },
+            trace_agent=profile.agent_name,
         )
         return {
             "data": current_data,

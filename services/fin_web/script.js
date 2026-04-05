@@ -25,6 +25,111 @@ const toggleSidebarBtn = document.getElementById('toggle-sidebar');
 
 // Constants
 const API_URL = 'http://localhost:8000/api/analyze';
+const STREAM_API_URL = 'http://localhost:8000/api/analyze/stream';
+
+function createAssistantDraft(message = 'FinMind 正在准备输出...') {
+    const wrapper = document.createElement('div');
+    wrapper.id = 'assistant-streaming';
+    wrapper.className = 'max-w-4xl mx-auto flex gap-4 justify-start';
+    wrapper.innerHTML = `
+        <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0 mt-1">
+            <i data-lucide="sparkles" size="16"></i>
+        </div>
+        <div class="flex flex-col gap-2 max-w-[85%] items-start">
+            <div class="chat-bubble-assistant p-4 text-sm leading-relaxed w-full markdown-body stream-bubble"></div>
+            <div class="px-2 text-xs text-slate-400 stream-status">${message}</div>
+        </div>
+    `;
+    chatContainer.appendChild(wrapper);
+    lucide.createIcons();
+    scrollToBottom();
+    return wrapper;
+}
+
+function updateAssistantDraft(content, statusText = null) {
+    const wrapper = document.getElementById('assistant-streaming');
+    if (!wrapper) return;
+    const bubble = wrapper.querySelector('.stream-bubble');
+    const status = wrapper.querySelector('.stream-status');
+    if (bubble) {
+        bubble.innerText = content || '';
+    }
+    if (status && statusText !== null) {
+        status.innerText = statusText;
+    }
+    scrollToBottom();
+}
+
+function finalizeAssistantDraft(finalContent) {
+    const wrapper = document.getElementById('assistant-streaming');
+    if (!wrapper) return;
+    const bubble = wrapper.querySelector('.stream-bubble');
+    const status = wrapper.querySelector('.stream-status');
+    if (bubble) {
+        bubble.innerHTML = marked.parse(finalContent || '');
+    }
+    if (status) {
+        status.remove();
+    }
+    wrapper.removeAttribute('id');
+    wrapper.dataset.content = finalContent || '';
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-1 mt-1 px-2';
+    const msgId = `msg-${Date.now()}`;
+    wrapper.id = msgId;
+    actions.innerHTML = `
+        <div class="relative inline-block">
+            <button class="action-btn p-1 rounded-lg transition-colors" onclick="toggleDownloadDropdown('${msgId}')" title="下载">
+                <i data-lucide="download" size="12"></i>
+            </button>
+            <div id="${msgId}-dropdown" class="dropdown-menu shadow-xl border border-slate-100 py-1 overflow-hidden">
+                <button class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 flex items-center gap-2" onclick="downloadContent('${msgId}', 'txt')"><i data-lucide="file-text" size="10"></i> TXT</button>
+                <button class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 flex items-center gap-2" onclick="downloadContent('${msgId}', 'pdf')"><i data-lucide="file-down" size="10"></i> PDF</button>
+                <button class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 flex items-center gap-2" onclick="downloadContent('${msgId}', 'word')"><i data-lucide="file-type" size="10"></i> Word</button>
+            </div>
+        </div>
+        <button class="action-btn p-1 rounded-lg" onclick="copyToClipboard(this)" title="复制">
+            <i data-lucide="copy" size="12"></i>
+        </button>
+        <button class="action-btn p-1 rounded-lg" onclick="regenerateAnalysis()" title="重新生成">
+            <i data-lucide="refresh-cw" size="12"></i>
+        </button>
+        <div class="h-4 w-[1px] bg-slate-200 mx-1"></div>
+        <button class="action-btn p-1 rounded-lg hover:text-green-600" onclick="rateMessage(this, 'like')" title="喜欢">
+            <i data-lucide="thumbs-up" size="12"></i>
+        </button>
+        <button class="action-btn p-1 rounded-lg hover:text-red-600" onclick="rateMessage(this, 'dislike')" title="不喜欢">
+            <i data-lucide="thumbs-down" size="12"></i>
+        </button>
+    `;
+    wrapper.querySelector('.flex-col').appendChild(actions);
+    lucide.createIcons();
+}
+
+function parseSSEChunk(buffer, onEvent) {
+    const frames = buffer.split('\n\n');
+    const rest = frames.pop();
+    frames.forEach(frame => {
+        const lines = frame.split('\n');
+        let eventName = 'message';
+        let data = '';
+        lines.forEach(line => {
+            if (line.startsWith('event:')) {
+                eventName = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+                data += line.slice(5).trim();
+            }
+        });
+        if (!data) return;
+        try {
+            onEvent(eventName, JSON.parse(data));
+        } catch (err) {
+            console.error('Failed to parse SSE event', eventName, data, err);
+        }
+    });
+    return rest;
+}
 
 // Functions
 function saveConversations() {
@@ -200,52 +305,63 @@ async function handleSendMessage(overrideText = null) {
     // Create AbortController for this request
     currentAbortController = new AbortController();
     
-    // Thinking indicator
-    const thinkingWrapper = document.createElement('div');
-    thinkingWrapper.id = 'thinking-indicator';
-    thinkingWrapper.className = 'max-w-4xl mx-auto flex gap-4 justify-start';
-    thinkingWrapper.innerHTML = `
-        <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0 mt-1">
-            <i data-lucide="brain-circuit" size="16" class="animate-pulse"></i>
-        </div>
-        <div class="chat-bubble-assistant p-4 text-sm text-slate-400 font-medium">
-            FinMind 正在深度分析中<span class="loading-dots"></span>
-        </div>
-    `;
-    chatContainer.appendChild(thinkingWrapper);
-    lucide.createIcons();
-    scrollToBottom();
+    const streamingWrapper = createAssistantDraft('FinMind 正在准备分析...');
+    let finalReport = '';
+    let streamBuffer = '';
+    let sawSummaryChunk = false;
 
     try {
-        const response = await fetch(API_URL, {
+        const response = await fetch(STREAM_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: text }),
             signal: currentAbortController.signal
         });
-        
-        const result = await response.json();
-        thinkingWrapper.remove();
-        
-        if (result.status === 'success') {
-            const assistantMsg = { 
-                role: 'assistant', 
-                content: result.report
-            };
-            chat.messages.push(assistantMsg);
-            renderMessage(assistantMsg);
-        } else {
-            const errorMsg = { role: 'assistant', content: '❌ 分析失败：' + (result.error || '连接超时') };
-            chat.messages.push(errorMsg);
-            renderMessage(errorMsg);
+
+        if (!response.ok || !response.body) {
+            throw new Error(`HTTP ${response.status}`);
         }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            streamBuffer += decoder.decode(value, { stream: true });
+            streamBuffer = parseSSEChunk(streamBuffer, (eventName, payload) => {
+                if (eventName === 'status' || eventName === 'progress') {
+                    updateAssistantDraft(
+                        sawSummaryChunk ? finalReport : '',
+                        payload.message || 'FinMind 正在深度分析中...'
+                    );
+                } else if (eventName === 'summary_chunk') {
+                    sawSummaryChunk = true;
+                    finalReport += payload.content || '';
+                    updateAssistantDraft(finalReport, 'FinMind 正在生成最终报告...');
+                } else if (eventName === 'final') {
+                    finalReport = payload.report || finalReport;
+                } else if (eventName === 'error') {
+                    throw new Error(payload.message || '连接超时');
+                }
+            });
+        }
+
+        finalizeAssistantDraft(finalReport);
+        const assistantMsg = {
+            role: 'assistant',
+            content: finalReport
+        };
+        chat.messages.push(assistantMsg);
     } catch (err) {
-        if (document.getElementById('thinking-indicator')) thinkingWrapper.remove();
+        const wrapper = document.getElementById('assistant-streaming');
         if (err.name === 'AbortError') {
+            if (wrapper) wrapper.remove();
             const cancelMsg = { role: 'assistant', content: '⚠️ 已取消分析。' };
             chat.messages.push(cancelMsg);
             renderMessage(cancelMsg);
         } else {
+            if (wrapper) wrapper.remove();
             const errorMsg = { role: 'assistant', content: '❌ 无法连接服务器，请检查后端状态。' };
             chat.messages.push(errorMsg);
             renderMessage(errorMsg);

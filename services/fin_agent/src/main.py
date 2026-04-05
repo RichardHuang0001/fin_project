@@ -40,6 +40,7 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 from src.utils.logging_config import setup_logger, SUCCESS_ICON, ERROR_ICON, WAIT_ICON
 from src.utils.state_definition import AgentState
 from src.utils.execution_logger import initialize_execution_logger, finalize_execution_logger, get_execution_logger
+from src.utils.market_detector import detect_market, MarketType
 
 # 智能体模块导入 - 六个核心分析智能体
 from src.agents.intent_agent import intent_agent       # 意图智能体：解析用户意图
@@ -90,17 +91,59 @@ logger = setup_logger(__name__)
 # ============================================================================
 
 def extract_stock_info(query):
-    """精确提取股票代码和公司名称"""
+    """精确提取股票代码和公司名称。返回 (company_name, stock_code, market_type)。"""
     stock_code = None
     company_name = None
-    
+    market_type = "unknown"
+
+    # ==== 港股/美股模式（优先匹配，避免被 A 股模式误捕获）====
+
+    # HK-1: .HK 后缀格式，如"分析0700.HK"、"0700.HK值得买吗"
+    m = re.search(r'(\d{4,5})\.HK\b', query, re.IGNORECASE)
+    if m:
+        stock_code = m.group(1)
+        return company_name, stock_code, "hk"
+
+    # HK-2: HK 前缀格式，如"HK0700"、"HK.0700"
+    m = re.search(r'HK\.?(\d{4,5})\b', query, re.IGNORECASE)
+    if m:
+        stock_code = m.group(1)
+        return company_name, stock_code, "hk"
+
+    # HK-3: 公司名 + 4-5位数字括号，如"腾讯(0700)"、"阿里巴巴(9988)"
+    m = re.search(r'([^\d（(]+?)\s*[（(](\d{4,5})[)）]', query)
+    if m:
+        company_name = m.group(1).strip()
+        stock_code = m.group(2)
+        return company_name, stock_code, "hk"
+
+    # US-1: 公司名 + 英文代码括号，如"Apple(AAPL)"、"Microsoft(MSFT)"
+    m = re.search(r'([^(]+?)\s*[（(]([A-Z]{1,5})[)）]', query)
+    if m:
+        company_name = m.group(1).strip()
+        stock_code = m.group(2)
+        # 排除中文被误匹配（如果 company_name 包含中文字符且长度很短，可能是误匹配）
+        if not re.search(r'[\u4e00-\u9fa5]', company_name) or len(company_name) >= 2:
+            return company_name, stock_code, "us"
+
+    # US-2: 独立英文代码（2-5位大写字母紧跟分析词），如"分析AAPL"、"MSFT值得买吗"
+    m = re.search(r'\b([A-Z]{2,5})\b', query)
+    if m:
+        candidate = m.group(1)
+        # 确认不是中文拼音误匹配：检查附近是否有分析关键词
+        context = query[:m.start()] + query[m.end():]
+        if re.search(r'分析|看看|买|投资|怎么样|如何|趋势|财务|估值|技术|新闻', context):
+            return company_name, candidate, "us"
+
+    # ==== A股模式（原有逻辑）====
+
     # 模式1: 包含"请帮我分析一下"的复杂查询，如"请帮我分析一下嘉友国际(603871)这只股票的投资价值如何"
     pattern1 = r'请帮我分析一下\s*([^（(]+?)\s*[（(](\d{5,6})[)）]'
     match1 = re.search(pattern1, query)
     if match1:
         company_name = match1.group(1).strip()
         stock_code = match1.group(2)
-        return company_name, stock_code
+        return company_name, stock_code, "a_share"
     
     # 模式2: 包含"分析一下"的复杂查询，如"分析一下嘉友国际(603871)的财务状况"
     pattern2 = r'分析一下\s*([^（(]+?)\s*[（(](\d{5,6})[)）]'
@@ -108,55 +151,55 @@ def extract_stock_info(query):
     if match2:
         company_name = match2.group(1).strip()
         stock_code = match2.group(2)
-        return company_name, stock_code
-    
+        return company_name, stock_code, "a_share"
+
     # 模式3: 股票代码在括号内，如"分析嘉友国际(603871)"
     pattern3 = r'分析\s*([^（(]+?)\s*[（(](\d{5,6})[)）]'
     match3 = re.search(pattern3, query)
     if match3:
         company_name = match3.group(1).strip()
         stock_code = match3.group(2)
-        return company_name, stock_code
-    
+        return company_name, stock_code, "a_share"
+
     # 模式4: 股票代码在括号内，如"分析(603871)嘉友国际"
     pattern4 = r'分析\s*[（(](\d{5,6})[)）]\s*([^）)]+)'
     match4 = re.search(pattern4, query)
     if match4:
         stock_code = match4.group(1)
         company_name = match4.group(2).strip()
-        return company_name, stock_code
-    
+        return company_name, stock_code, "a_share"
+
     # 模式5: 包含"帮我看看"的查询，如"帮我看看(000001)平安银行这只股票"
     pattern5 = r'帮我看看\s*[（(](\d{5,6})[)）]\s*([^）)]+?)(?:\s*这只|\s*这个)?\s*股票'
     match5 = re.search(pattern5, query)
     if match5:
         stock_code = match5.group(1)
         company_name = match5.group(2).strip()
-        return company_name, stock_code
-    
+        return company_name, stock_code, "a_share"
+
     # 模式6: 包含"我想了解一下"的查询，如"我想了解一下比亚迪(002594)的投资价值"
     pattern6 = r'我想了解一下\s*([^（(]+?)\s*[（(](\d{5,6})[)）]'
     match6 = re.search(pattern6, query)
     if match6:
         company_name = match6.group(1).strip()
         stock_code = match6.group(2)
-        return company_name, stock_code
-    
+        return company_name, stock_code, "a_share"
+
     # 模式7: 包含"帮我看看"的复杂查询，如"帮我看看茅台(600519)这只股票值得投资吗"
     pattern7 = r'帮我看看\s*([^（(]+?)\s*[（(](\d{5,6})[)）]'
     match7 = re.search(pattern7, query)
     if match7:
         company_name = match7.group(1).strip()
         stock_code = match7.group(2)
-        return company_name, stock_code
-    
+        return company_name, stock_code, "a_share"
+
     # 模式8: 直接公司名+括号格式，如"平安银行(000001)值得买吗"
     pattern8 = r'^([^（(]+?)\s*[（(](\d{5,6})[)）]'
     match8 = re.search(pattern8, query)
     if match8:
         company_name = match8.group(1).strip()
         stock_code = match8.group(2)
-        return company_name, stock_code
+        return company_name, stock_code, "a_share"
     
     # 模式9: 包含"分析一下"的查询，如"分析一下宁德时代的财务状况"
     pattern9 = r'分析一下\s*([^0-9（）()\s]+?)(?:\s*的|\s|$)'
@@ -217,10 +260,8 @@ def extract_stock_info(query):
     match18 = re.search(pattern18, query)
     if match18:
         stock_code = match18.group(1)
-        # 如果只有代码没有名字，尝试保持 stock_code
         if not company_name:
-            # 这里的 stock_code 已经赋值，直接返回
-            return company_name, stock_code
+            return company_name, stock_code, "a_share"
     
     # 模式18b: 包含"分析" + 5-6位代码
     pattern18b = r'分析\s*(\d{5,6})'
@@ -260,8 +301,14 @@ def extract_stock_info(query):
         # 如果公司名称太短（少于2个字符），可能是误匹配
         if len(company_name) < 2:
             company_name = None
-    
-    return company_name, stock_code
+
+    # 如果从代码推断市场类型
+    if stock_code and market_type == "unknown":
+        detected = detect_market(stock_code)
+        if detected != MarketType.UNKNOWN:
+            market_type = detected.value
+
+    return company_name, stock_code, market_type
 
 # ============================================================================
 # 工作流路由逻辑
@@ -381,16 +428,22 @@ async def execute_analysis(user_query, execution_logger=None):
         }
         
         # 尝试通过正则做初步提取（作为补充，IntentAgent 会做最终决定）
-        company_name, stock_code = extract_stock_info(user_query)
+        company_name, stock_code, market_type = extract_stock_info(user_query)
         if company_name:
             initial_data["company_name"] = company_name
         if stock_code:
-            if stock_code.startswith('6'):
-                initial_data["stock_code"] = f"sh.{stock_code}"
-            elif stock_code.startswith('0') or stock_code.startswith('3'):
-                initial_data["stock_code"] = f"sz.{stock_code}"
+            if market_type == "a_share":
+                if stock_code.startswith('6'):
+                    initial_data["stock_code"] = f"sh.{stock_code}"
+                elif stock_code.startswith('0') or stock_code.startswith('3'):
+                    initial_data["stock_code"] = f"sz.{stock_code}"
+                else:
+                    initial_data["stock_code"] = stock_code
             else:
+                # 港股/美股：原样传入，yfinance _normalize_symbol 负责处理
                 initial_data["stock_code"] = stock_code
+        if market_type and market_type != "unknown":
+            initial_data["market_type"] = market_type
 
         initial_state = AgentState(
             messages=[],

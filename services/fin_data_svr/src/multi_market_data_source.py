@@ -25,11 +25,6 @@ class MultiMarketDataSource(FinancialDataSource):
             return self.baostock_source
         return self.yfinance_source
 
-    def _non_a_share_not_supported(self, method_name: str) -> NoDataFoundError:
-        return NoDataFoundError(
-            f"{method_name} is currently not supported for non-A-share markets."
-        )
-
     def get_historical_k_data(
         self,
         code: str,
@@ -52,6 +47,8 @@ class MultiMarketDataSource(FinancialDataSource):
     def get_stock_basic_info(self, code: str, fields: Optional[List[str]] = None) -> pd.DataFrame:
         source = self._get_source(code)
         return source.get_stock_basic_info(code=code, fields=fields)
+
+    # ---- 以下方法无 code 参数，仅 A 股有意义，直接走 baostock ----
 
     def get_trade_dates(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
         return self.baostock_source.get_trade_dates(start_date=start_date, end_date=end_date)
@@ -85,40 +82,30 @@ class MultiMarketDataSource(FinancialDataSource):
     def get_money_supply_data_year(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
         return self.baostock_source.get_money_supply_data_year(start_date=start_date, end_date=end_date)
 
+    # ---- 按 code 路由：A 股走 baostock，其他走 yfinance ----
+
     def get_profit_data(self, code: str, year: str, quarter: int) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_profit_data")
         return source.get_profit_data(code=code, year=year, quarter=quarter)
 
     def get_operation_data(self, code: str, year: str, quarter: int) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_operation_data")
         return source.get_operation_data(code=code, year=year, quarter=quarter)
 
     def get_growth_data(self, code: str, year: str, quarter: int) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_growth_data")
         return source.get_growth_data(code=code, year=year, quarter=quarter)
 
     def get_balance_data(self, code: str, year: str, quarter: int) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_balance_data")
         return source.get_balance_data(code=code, year=year, quarter=quarter)
 
     def get_cash_flow_data(self, code: str, year: str, quarter: int) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_cash_flow_data")
         return source.get_cash_flow_data(code=code, year=year, quarter=quarter)
 
     def get_dupont_data(self, code: str, year: str, quarter: int) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_dupont_data")
         return source.get_dupont_data(code=code, year=year, quarter=quarter)
 
     def get_sz50_stocks(self, date: Optional[str] = None) -> pd.DataFrame:
@@ -132,32 +119,40 @@ class MultiMarketDataSource(FinancialDataSource):
 
     def get_dividend_data(self, code: str, year: str, year_type: str = "report") -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_dividend_data")
         return source.get_dividend_data(code=code, year=year, year_type=year_type)
 
     def get_adjust_factor_data(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_adjust_factor_data")
         return source.get_adjust_factor_data(code=code, start_date=start_date, end_date=end_date)
 
     def get_performance_express_report(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_performance_express_report")
         return source.get_performance_express_report(code=code, start_date=start_date, end_date=end_date)
 
     def get_forecast_report(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
         source = self._get_source(code)
-        if source is self.yfinance_source:
-            raise self._non_a_share_not_supported("get_forecast_report")
         return source.get_forecast_report(code=code, start_date=start_date, end_date=end_date)
 
     def get_stock_industry(self, code: Optional[str] = None, date: Optional[str] = None) -> pd.DataFrame:
         if code and not self._is_a_share_code(code):
-            raise self._non_a_share_not_supported("get_stock_industry")
+            raise NoDataFoundError(
+                "get_stock_industry is not supported for non-A-share markets via yfinance."
+            )
         return self.baostock_source.get_stock_industry(code=code, date=date)
 
     def crawl_news(self, query: str, top_k: int = 10) -> str:
         return self.baostock_source.crawl_news(query=query, top_k=top_k)
+
+    # ---- yfinance 独有方法 ----
+
+    def get_earnings_history(self, code: str) -> pd.DataFrame:
+        source = self._get_source(code)
+        return source.get_earnings_history(code=code)
+
+    def get_analyst_recommendations(self, code: str) -> pd.DataFrame:
+        source = self._get_source(code)
+        return source.get_analyst_recommendations(code=code)
+
+    def get_stock_valuation_metrics(self, code: str) -> pd.DataFrame:
+        source = self._get_source(code)
+        return source.get_stock_valuation_metrics(code=code)

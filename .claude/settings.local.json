@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from services.fin_data_svr.src.yfinance_data_source import YFinanceDataSource; print\\('OK'\\)\")",
+      "Bash(python -c \"from services.fin_agent.src.utils.market_detector import detect_market; print\\('OK'\\)\")",
+      "Bash(python -c \"with open\\('d:/fin_project/services/fin_agent/src/utils/market_detector.py', 'rb'\\) as f: data = f.read\\(\\); print\\('null bytes at:', [i for i, b in enumerate\\(data\\) if b == 0]\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from src.utils.market_detector import detect_market, MarketType; print\\('OK'\\); print\\(detect_market\\('sh.600000'\\)\\); print\\(detect_market\\('AAPL'\\)\\); print\\(detect_market\\('0700.HK'\\)\\); print\\(detect_market\\('700'\\)\\)\")"
+    ]
+  }
+}

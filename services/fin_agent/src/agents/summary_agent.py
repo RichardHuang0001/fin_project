@@ -259,6 +259,13 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
 
         # 准备汇总的系统提示词
         # 准备汇总的系统提示词（精简版）
+        market_type = current_data.get("market_type", "a_share")
+        market_note = ""
+        if market_type == "hk":
+            market_note = "\n        - 注意：这是港股市场股票，数据来自 yfinance，部分 A 股专属数据（如业绩快报、业绩预告）不可用。"
+        elif market_type == "us":
+            market_note = "\n        - 注意：这是美股市场股票，数据来自 yfinance，部分 A 股专属数据（如业绩快报、业绩预告）不可用。"
+
         system_prompt = f"""
         你是专业金融分析师。请基于提供的分析结果，回答用户关于 {company_name}（{stock_code}）的问题。
 
@@ -285,9 +292,9 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
         - 如果某些分析维度数据为 "Not available"，请跳过该章节，不要提及。
         
         ### 注意事项：
-        - 信息不足时明确写“数据不足/未获取”，不要编造数据。
+        - 信息不足时明确写”数据不足/未获取”，不要编造数据。
         - 不要输出代码块标记（```）。
-        - 报告末尾注明：分析基准时间：{current_time_info}。
+        - 报告末尾注明：分析基准时间：{current_time_info}。{market_note}
         """
 
         # 准备汇总提示词（精简版）
@@ -466,8 +473,8 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
                 if not safe_company_name:
                     safe_company_name = "company"
 
-            # 清理股票代码（移除可能的前缀）
-            clean_stock_code = stock_code.replace("sh.", "").replace("sz.", "")
+            # 清理股票代码（移除可能的前缀/后缀）
+            clean_stock_code = stock_code.replace("sh.", "").replace("sz.", "").replace(".HK", "")
             safe_file_prefix = f"report_{safe_company_name}_{clean_stock_code}"
 
         report_filename = f"{safe_file_prefix}_{timestamp}.md"
@@ -544,8 +551,8 @@ async def summary_agent(state: AgentState) -> Dict[str, Any]:
                 if not safe_company_name:
                     safe_company_name = "company"
 
-            # 清理股票代码（移除可能的前缀）
-            clean_stock_code = stock_code.replace("sh.", "").replace("sz.", "")
+            # 清理股票代码（移除可能的前缀/后缀）
+            clean_stock_code = stock_code.replace("sh.", "").replace("sz.", "").replace(".HK", "")
             safe_file_prefix = f"error_report_{safe_company_name}_{clean_stock_code}"
 
         report_filename = f"{safe_file_prefix}_{timestamp}.md"

@@ -2,7 +2,6 @@
 ValueAnalysis Agent
 估值分析 Agent：由代码主导工具取数，LLM 基于估值相关数据进行总结。
 """
-
 from __future__ import annotations
 
 from src.agents.data_driven_executor import (
@@ -10,6 +9,7 @@ from src.agents.data_driven_executor import (
     ToolStep,
     get_previous_completed_quarter,
     get_recent_date_range,
+    get_market_type,
     run_data_driven_analysis,
 )
 from src.utils.logging_config import WAIT_ICON, setup_logger
@@ -21,7 +21,6 @@ logger = setup_logger(__name__)
 def _quarter_args(current_data):
     args = get_previous_completed_quarter(current_data)
     args["code"] = current_data.get("stock_code")
-    # Ensure year is string for tool validation
     if "year" in args:
         args["year"] = str(args["year"])
     return args
@@ -37,6 +36,24 @@ def _price_args(current_data):
         }
     )
     return args
+
+
+def _only_a_share_args_builder(default_builder):
+    """包装 args_builder，非 A 股时返回 None。"""
+    def wrapper(data):
+        if get_market_type(data) != "a_share":
+            return None
+        return default_builder(data)
+    return wrapper
+
+
+def _only_non_a_share_args_builder(default_builder):
+    """包装 args_builder，仅非 A 股时执行。"""
+    def wrapper(data):
+        if get_market_type(data) == "a_share":
+            return None
+        return default_builder(data)
+    return wrapper
 
 
 VALUE_PROFILE = AnalysisProfile(
@@ -60,6 +77,7 @@ VALUE_PROFILE = AnalysisProfile(
         "get_profit_data",
         "get_growth_data",
         "get_historical_k_data",
+        "get_stock_valuation_metrics",
     ],
     tool_steps=[
         ToolStep(
@@ -70,7 +88,17 @@ VALUE_PROFILE = AnalysisProfile(
         ToolStep(
             name="get_stock_industry",
             label="行业信息",
-            args_builder=lambda data: {"code": data.get("stock_code")},
+            args_builder=_only_a_share_args_builder(
+                lambda data: {"code": data.get("stock_code")}
+            ),
+            required=False,
+        ),
+        ToolStep(
+            name="get_stock_valuation_metrics",
+            label="详细估值指标",
+            args_builder=_only_non_a_share_args_builder(
+                lambda data: {"code": data.get("stock_code")}
+            ),
             required=False,
         ),
         ToolStep(
@@ -108,4 +136,3 @@ VALUE_PROFILE = AnalysisProfile(
 async def value_agent(state: AgentState) -> AgentState:
     logger.info("%s ValueAgent: Starting data-driven value analysis.", WAIT_ICON)
     return await run_data_driven_analysis(state, VALUE_PROFILE, logger)
-

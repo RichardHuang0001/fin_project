@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show:*)",
+      "Bash(python -c \"import yfinance as yf; t=yf.Ticker\\('AAPL'\\); print\\('=== ticker.info keys ==='\\); print\\(sorted\\([k for k,v in t.info.items\\(\\) if v is not None]\\)[:60]\\); print\\('=== Has dividends ==='\\); print\\(hasattr\\(t, 'dividends'\\)\\); print\\(hasattr\\(t, 'actions'\\)\\); print\\('=== Has financials ==='\\); print\\(hasattr\\(t, 'financials'\\)\\); print\\(hasattr\\(t, 'balance_sheet'\\)\\); print\\(hasattr\\(t, 'cashflow'\\)\\); print\\(hasattr\\(t, 'earnings'\\)\\); print\\(hasattr\\(t, 'quarterly_financials'\\)\\); print\\(hasattr\\(t, 'quarterly_balance_sheet'\\)\\); print\\(hasattr\\(t, 'quarterly_cashflow'\\)\\); print\\(hasattr\\(t, 'quarterly_earnings'\\)\\); print\\(hasattr\\(t, 'recommendations'\\)\\); print\\(hasattr\\(t, 'sustainability'\\)\\); print\\('=== info relevant keys ==='\\); info=t.info; [print\\(f'{k}: {v}'\\) for k,v in sorted\\(info.items\\(\\)\\) if v is not None and k in ['trailingPE','forwardPE','priceToBook','marketCap','enterpriseValue','dividendYield','payoutRatio','beta','trailingEps','forwardEps','bookValue','revenueGrowth','earningsGrowth','grossMargins','operatingMargins','profitMargins','returnOnEquity','debtToEquity','currentRatio','quickRatio','totalRevenue','ebitda','freeCashflow','operatingCashflow','totalCash','totalDebt','sharesOutstanding','floatShares','shortRatio','shortPercentOfFloat','heldPercentInsiders','heldPercentInstitutions','analystTargetPrice','recommendationKey','numberOfAnalystOpinions','earningsDate','exDividendDate','lastSplitDate','lastSplitFactor','sector','industry','country','currency','exchange','market','fiftyTwoWeekHigh','fiftyTwoWeekLow','averageVolume','fiftyDayAverage','twoHundredDayAverage']]\")",
+      "Bash(python -c \"from services.fin_data_svr.src.yfinance_data_source import YFinanceDataSource; print\\('yfinance_data_source OK'\\)\")",
+      "Bash(python -c \"from services.fin_data_svr.src.multi_market_data_source import MultiMarketDataSource; print\\('multi_market OK'\\)\")",
+      "Bash(python -c \"from services.fin_agent.src.utils.market_detector import detect_market, MarketType; print\\(market_detector OK\\)\")"
+    ]
+  }
+}

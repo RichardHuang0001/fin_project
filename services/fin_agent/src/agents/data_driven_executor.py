@@ -29,6 +29,11 @@ load_dotenv(override=True)
 ToolArgsBuilder = Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
 
 
+def get_market_type(current_data: Dict[str, Any]) -> str:
+    """从当前状态中获取市场类型，默认为 a_share。"""
+    return current_data.get("market_type", "a_share")
+
+
 @dataclass(frozen=True)
 class ToolStep:
     name: str

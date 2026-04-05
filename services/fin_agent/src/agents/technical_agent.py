@@ -9,6 +9,7 @@ from src.agents.data_driven_executor import (
     AnalysisProfile,
     ToolStep,
     get_recent_date_range,
+    get_market_type,
     run_data_driven_analysis,
 )
 from src.utils.logging_config import WAIT_ICON, setup_logger
@@ -27,6 +28,16 @@ def _kline_args(current_data):
         }
     )
     return args
+
+
+def _skip_for_non_ashare(tool_name):
+    """返回一个 args_builder，在非 A 股市场时返回 None（跳过该工具）。"""
+    def builder(data):
+        if get_market_type(data) != "a_share":
+            return None
+        # 默认实现（子类可覆盖）
+        return {}
+    return builder
 
 
 TECHNICAL_PROFILE = AnalysisProfile(
@@ -58,7 +69,7 @@ TECHNICAL_PROFILE = AnalysisProfile(
         ToolStep(
             name="get_latest_trading_date",
             label="最近交易日",
-            args_builder=lambda data: {},
+            args_builder=_skip_for_non_ashare("get_latest_trading_date"),
             required=False,
         ),
         ToolStep(
@@ -69,7 +80,7 @@ TECHNICAL_PROFILE = AnalysisProfile(
         ToolStep(
             name="get_trade_dates",
             label="近 30 天交易日",
-            args_builder=lambda data: get_recent_date_range(data, 30),
+            args_builder=lambda data: get_recent_date_range(data, 30) if get_market_type(data) == "a_share" else None,
             required=False,
         ),
     ],
@@ -79,4 +90,3 @@ TECHNICAL_PROFILE = AnalysisProfile(
 async def technical_agent(state: AgentState) -> AgentState:
     logger.info("%s TechnicalAgent: Starting data-driven technical analysis.", WAIT_ICON)
     return await run_data_driven_analysis(state, TECHNICAL_PROFILE, logger)
-
